@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Virtual Gamepad</title>
+
+    <!-- Memanggil Firebase Firestore -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <!-- Memanggil Library NippleJS untuk Joystick Analog -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.1/nipplejs.js"></script>
+
+    <style>
+      * {
+        box-sizing: border-box;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        user-select: none;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #f8f9fa;
+        color: #333;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      .screen {
+        display: none;
+        width: 100%;
+        height: 100%;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .active {
+        display: flex;
+      }
+
+      /* Lobby & Form */
+      h1 {
+        margin-bottom: 20px;
+        text-align: center;
+        color: #175d7b;
+      }
+      .btn-lobby {
+        padding: 15px 30px;
+        margin: 10px;
+        font-size: 18px;
+        font-weight: bold;
+        color: white;
+        background: #175d7b;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        width: 80%;
+        max-width: 300px;
+        text-align: center;
+      }
+      .input-box {
+        padding: 15px;
+        font-size: 24px;
+        text-align: center;
+        width: 80%;
+        max-width: 300px;
+        border-radius: 10px;
+        border: 2px solid #175d7b;
+        margin-bottom: 15px;
+        outline: none;
+      }
+      #room-display {
+        font-size: 60px;
+        color: #175d7b;
+        font-weight: bold;
+        letter-spacing: 5px;
+      }
+
+      /* Tampilan Gamepad Landscape */
+      .gamepad-container {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        background: #fdfdfd;
+      }
+
+      /* Tombol Kiri Atas (LB, RB, B) */
+      .left-stack {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+      }
+
+      /* Tombol Kanan Bawah (X, Y, A) */
+      .right-row {
+        position: absolute;
+        bottom: 40px;
+        right: 40px;
+        display: flex;
+        gap: 15px;
+      }
+
+      /* Area Joystick Analog Pengganti Tombol A & D */
+      #joystick-zone {
+        position: absolute;
+        bottom: 20px;
+        left: 100px;
+        width: 140px;
+        height: 140px;
+      }
+
+      /* Ukuran Dasar Tombol Bundar Lainnya */
+      .btn-circle {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background-color: #15627f;
+        color: white;
+        border: 2px solid #092e3d;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-weight: bold;
+        font-size: 22px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+      }
+
+      /* Khusus memperbesar tombol X, Y, A di kanan bawah */
+      .right-row .btn-circle {
+        width: 80px;
+        height: 80px;
+        font-size: 28px;
+      }
+
+      .pressed {
+        filter: brightness(1.3);
+        transform: scale(0.9) translateY(2px);
+        box-shadow: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- SCREEN 1: LOBBY -->
+    <div id="screen-lobby" class="screen active">
+      <h1>Pilih Mode</h1>
+      <button class="btn-lobby" onclick="showScreen('screen-laptop')">
+        💻 Laptop (Buat Room)
+      </button>
+      <button class="btn-lobby" onclick="showScreen('screen-phone-login')">
+        📱 HP (Masuk Room)
+      </button>
+    </div>
+
+    <!-- SCREEN 2: LAPTOP -->
+    <div id="screen-laptop" class="screen">
+      <h2>ROOM ID:</h2>
+      <div id="room-display">----</div>
+      <p>Buka di HP, masukkan ID, lalu jalankan Python.</p>
+    </div>
+
+    <!-- SCREEN 3: HP LOGIN -->
+    <div id="screen-phone-login" class="screen">
+      <h2>Masukkan Room ID</h2>
+      <input
+        type="number"
+        id="room-input"
+        class="input-box"
+        placeholder="1234"
+      />
+      <button class="btn-lobby" onclick="connectToRoom()">Connect 🎮</button>
+    </div>
+
+    <!-- SCREEN 4: GAMEPAD -->
+    <div id="screen-gamepad" class="screen">
+      <div class="gamepad-container">
+        <!-- Stack Kiri: LB, RB, B -->
+        <div class="left-stack">
+          <div class="btn-circle" data-key="button_lb">LB</div>
+          <div class="btn-circle" data-key="button_rb">RB</div>
+          <div class="btn-circle" data-key="button_b">B</div>
+        </div>
+
+        <!-- Area Joystick Analog (Pengganti tombol A & D) -->
+        <div id="joystick-zone"></div>
+
+        <!-- Row Kanan Bawah: X, Y, A -->
+        <div class="right-row">
+          <div class="btn-circle" data-key="button_x">X</div>
+          <div class="btn-circle" data-key="button_y">Y</div>
+          <div class="btn-circle" data-key="button_a">A</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // ========================================================
+      // 1. MASUKKAN CONFIG FIREBASE ANDA DI SINI
+      // ========================================================
+      const firebaseConfig = {
+        apiKey: "AIzaSyA1mifYk_Pf4fKsULRRrM4fh2j1YuuyMCg",
+        authDomain: "gamepad-40ff2.firebaseapp.com",
+        projectId: "gamepad-40ff2",
+        storageBucket: "gamepad-40ff2.firebasestorage.app",
+        messagingSenderId: "826006688918",
+        appId: "1:826006688918:web:163467256fdcd7f2469eb7",
+        measurementId: "G-R6LC6SF4CB",
+      };
+
+      if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+      }
+      const db = firebase.firestore();
+
+      let currentRoomId = null;
+
+      function showScreen(screenId) {
+        document
+          .querySelectorAll(".screen")
+          .forEach((s) => s.classList.remove("active"));
+        document.getElementById(screenId).classList.add("active");
+
+        if (screenId === "screen-laptop") {
+          generateRoom();
+        }
+      }
+
+      function generateRoom() {
+        currentRoomId = Math.floor(1000 + Math.random() * 9000).toString();
+        document.getElementById("room-display").innerText = currentRoomId;
+
+        db.collection("rooms").doc(currentRoomId).set({
+          up: false,
+          down: false,
+          left: false,
+          right: false,
+          button_a: false,
+          button_b: false,
+          button_x: false,
+          button_y: false,
+          button_lb: false,
+          button_rb: false,
+        });
+      }
+
+      function connectToRoom() {
+        const input = document.getElementById("room-input").value;
+        if (input.length === 4) {
+          currentRoomId = input;
+          showScreen("screen-gamepad");
+
+          // Inisialisasi Joystick setelah masuk ke layar gamepad
+          initJoystick();
+
+          try {
+            document.documentElement.requestFullscreen();
+            screen.orientation.lock("landscape");
+          } catch (e) {}
+        } else {
+          alert("Masukkan 4 digit angka!");
+        }
+      }
+
+      // Fungsi untuk mengaktifkan Virtual Joystick Analog
+      function initJoystick() {
+        // Mencegah duplikasi joystick jika reconnect
+        document.getElementById("joystick-zone").innerHTML = "";
+
+        var joystick = nipplejs.create({
+          zone: document.getElementById("joystick-zone"),
+          mode: "static",
+          position: { left: "70px", bottom: "70px" },
+          color: "#15627f",
+          size: 110,
+        });
+
+        // Saat joystick digeser
+        joystick.on("move", function (evt, data) {
+          if (!data.direction) return;
+          let dir = data.direction.x; // Mendeteksi arah sumbu X (kiri / kanan)
+
+          if (dir === "left") {
+            updateFirebase("left", true);
+            updateFirebase("right", false);
+          } else if (dir === "right") {
+            updateFirebase("right", true);
+            updateFirebase("left", false);
+          }
+        });
+
+        // Saat joystick dilepas (kembali ke tengah)
+        joystick.on("end", function (evt, data) {
+          updateFirebase("left", false);
+          updateFirebase("right", false);
+        });
+      }
+
+      const buttons = document.querySelectorAll(".btn-circle");
+
+      function updateFirebase(keyName, isPressed) {
+        if (!currentRoomId) return;
+
+        let updateData = {};
+        updateData[keyName] = isPressed;
+
+        db.collection("rooms")
+          .doc(currentRoomId)
+          .update(updateData)
+          .catch((err) => {
+            console.log("Error Firebase: ", err);
+          });
+      }
+
+      // Event listener untuk tombol bundar biasa (LB, RB, B, X, Y, A)
+      buttons.forEach((button) => {
+        const keyName = button.getAttribute("data-key");
+        if (!keyName) return;
+
+        button.addEventListener("touchstart", (e) => {
+          e.preventDefault();
+          button.classList.add("pressed");
+          updateFirebase(keyName, true);
+        });
+
+        button.addEventListener("touchend", (e) => {
+          e.preventDefault();
+          button.classList.remove("pressed");
+          updateFirebase(keyName, false);
+        });
+
+        button.addEventListener("mousedown", () => {
+          button.classList.add("pressed");
+          updateFirebase(keyName, true);
+        });
+        button.addEventListener("mouseup", () => {
+          button.classList.remove("pressed");
+          updateFirebase(keyName, false);
+        });
+        button.addEventListener("mouseleave", () => {
+          button.classList.remove("pressed");
+          updateFirebase(keyName, false);
+        });
+      });
+    </script>
+  </body>
+</html>
